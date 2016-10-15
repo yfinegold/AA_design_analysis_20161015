@@ -324,7 +324,7 @@ server <- function(input, output,session) {
   ############### Select area file
   shinyFileChoose(input,
                   'areafilename',
-                  updateFreq = 1000,
+                  filetype=c('csv'),
                   session=session,
                   roots=volumes,
                   restrictions=system.file(package='base')
