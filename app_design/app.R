@@ -260,7 +260,8 @@ ui <- dashboardPage(
                 'R is compatible with all systems and OFT is only compatible with Linux.',
                 'Area calculations of large raster files using R will take some time.',
                 uiOutput("MapAreaCalcOption"),
-                uiOutput("IsAreaCalc")
+                uiOutput("IsAreaCalc"),
+                uiOutput("UIDisplayMap")
             ),
             
             ####################################################################################
@@ -270,7 +271,11 @@ ui <- dashboardPage(
               "The areas for each of the map categories need to be calculated in order to calculate the overall and stratified sample size." ,
               "Make sure to click on the submit legend button to load the map area table", 
               # textOutput("info"),
-              tableOutput('mapAreaTable')
+              tableOutput('mapAreaTable'),
+              textInput("basename_area", 
+                        label = h3("Basename of area file to export"),
+                        value = paste("areas_",Sys.Date(),sep="")),
+              downloadButton('downloadData', 'Download the CSV with map areas')
             ),
             
             ####################################################################################
@@ -287,15 +292,13 @@ ui <- dashboardPage(
          
             ####################################################################################
             # New box
-            box(
-              title= "Display map and download", status = "success", solidHeader= TRUE, 
-              plotOutput('map'),
-              textInput("basename_area", 
-                        label = h3("Basename of area file to export"),
-                        value = paste("areas_",Sys.Date(),sep="")),
-              downloadButton('downloadData', 'Download the CSV with map areas')
+            conditionalPanel("is.null(input.IsDisplayMap)==F",
+                             box(
+                               title= "Display map ", status = "success", solidHeader= TRUE, 
+                               plotOutput('map')
               )
             )
+          )
           ),
     ####################################################################################
     # New Tab
@@ -528,8 +531,6 @@ server <- function(input, output,session) {
     outdir()
     })
 
-
-  
   ##################################################################################################################################    
   ## Create checkboxes to enable adding custom area
   
@@ -942,11 +943,23 @@ server <- function(input, output,session) {
     include.rownames=FALSE
     )
   
+  
+  ## For a raster the custom area is a customized csv file
+  ## For a shapefile it is a column in the dbf
+  
+  output$UIDisplayMap <-renderUI({
+    if(is.null(mapType()))return()
+    checkboxInput("IsDisplayMap",
+                  label="Do you want to display the map ? ")
+  })
+  
+  
   ##################################################################################################################################
   ############### Display the raster as a map 
     output$map <- renderPlot({
+      if(input$IsDisplayMap == T){
       print('Display the map')
-      plot(lcmap(), axes=FALSE)
+      plot(lcmap(), axes=FALSE)}
       })
   
 

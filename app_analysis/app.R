@@ -1,5 +1,5 @@
 ####################################################################################
-#######          Shiny app for accuracy assessment design       ####################
+#######          Shiny app for accuracy assessment analysis     ####################
 #######    contributors:  Remi d'Annunzio, Yelena Finegold,     ####################
 #######            Antonia Ortmann, Erik Lindquist              ####################
 #######              FAO Open Foris SEPAL project               ####################
@@ -16,7 +16,7 @@
 ####################################################################################
 
 ####################################################################################
-## Last update: 2016/09/29
+## Last update: 2016/10/15
 ####################################################################################
 
 
@@ -29,31 +29,31 @@ options(stringsAsFactors=FALSE)
 ########################################
 # include all the needed packages here #
 
-# packages <- function(x){
-#   x <- as.character(match.call()[[2]])
-#   if (!require(x,character.only=TRUE)){
-#     install.packages(pkgs=x,repos="http://cran.r-project.org")
-#     require(x,character.only=TRUE)
-#   }
-# }
+packages <- function(x){
+  x <- as.character(match.call()[[2]])
+  if (!require(x,character.only=TRUE)){
+    install.packages(pkgs=x,repos="http://cran.r-project.org")
+    require(x,character.only=TRUE)
+  }
+}
 
-library(ggplot2)
-library(xtable)
-library(raster)
-library(shiny)
-library(shinydashboard)
-library(dismo)
-library(stringr)
-library(snow)
-library(plyr)
-library(leaflet)
-library(RColorBrewer)
-library(DT)
-library(rgeos)
-library(rgdal)
-library(shinyFiles)
-library(shinyBS)
-library(htmltools)
+packages(ggplot2)
+packages(xtable)
+packages(raster)
+packages(shiny)
+packages(shinydashboard)
+packages(dismo)
+packages(stringr)
+packages(snow)
+packages(plyr)
+packages(leaflet)
+packages(RColorBrewer)
+packages(DT)
+packages(rgeos)
+packages(rgdal)
+packages(shinyFiles)
+packages(shinyBS)
+packages(htmltools)
 
 ####################################################################################
 #######       PART I : Setup the Graphic Interface        ##########################
@@ -178,31 +178,41 @@ ui <- dashboardPage(skin='green',
                 # New box
                 ####################################################################################
                 # New box
-                box(title= "Select folder where the files are", status = "success", solidHeader= TRUE,
-                    "Products from the AA design are stored there:
-                    areas of the map, sampling sizes, point file. 
-                    It should be the same as output folder from AA_design",
+                box(title= "Select input files", status = "success", solidHeader= TRUE,
+                    "Two files are necessary:",
                     br(),
-                    shinyDirButton('outdir', 'Select folder with collected points and area file', 'Please select a folder', FALSE),
-                    textOutput("outdirpath")
+                    "- The area file should contain the map areas and the corresponding map class. The area file can be generated in the Accuracy Assessment Design application.",
+                    br(),
+                    "- The validation file must contain a column with the classified reference data and a column with the original map data.",  
+                    br(),
+                    "The reference data will be compared with the map data at the same location.",
+                    br(),
+                    br(),
+                    shinyFilesButton('CEfilename', 
+                                     'File containing the reference and map data', 
+                                     'Please select a file', 
+                                     FALSE),
+                    textOutput("pointfilepath"),
+                    br(),
+                    shinyFilesButton('areafilename', 
+                                     'File containing the areas from the map', 
+                                     'Please select a file', 
+                                     FALSE),
+                    textOutput("areafilepath")
+                    
                 ),
                 
                 box(title= "Required input", status = "success", solidHeader= TRUE, width= 4,
-                    "Select the validation file exported from CollectEarth. 
-                    
-                    The area file should contain the map areas and the corresponding map class.
-                    The area file can be generated in the Accuracy Assessment Design application.
-                    The validation file must contain a column with the classified reference data and a column with the original map data. 
-                    The reference data will be compared with the map data at the same location.", 
+                    "If necessary change columns identifiers", 
                     
                     br(),
-                    uiOutput('uice_filename'),
-                    uiOutput('uiarea_filename'),
+                    #uiOutput('uice_filename'),
+                    #uiOutput('uiarea_filename'),
                     uiOutput("column_ref"),
-                    uiOutput("column_map"),
-                   
-                    uiOutput("Xcrd"),
-                    uiOutput("Ycrd")
+                    uiOutput("column_map")
+                    # 
+                    # uiOutput("Xcrd"),
+                    # uiOutput("Ycrd")
               ),
               # New box
               box(title= "Display data", status = "success", solidHeader= TRUE, width= 8,
@@ -221,8 +231,8 @@ ui <- dashboardPage(skin='green',
                 ####################################################################################
                 # New box
                 box(
-                  title= "What to check", status = "success", solidHeader= TRUE,
-                  "Let us check something",
+                  title= "Pivot table check", status = "success", solidHeader= TRUE,
+                  "Check that columns contain the right information",
                   htmlOutput("display_check_line"),
                   htmlOutput("display_check_cols"),
                   tableOutput("table_check"),
@@ -246,7 +256,7 @@ ui <- dashboardPage(skin='green',
                       plotOutput("histogram_all")
                   ),
                   
-                  box(h4("Adjusted areas and accuracies"),
+                  box(h4("Bias-corrected areas and accuracies"),
                       tableOutput("accuracy_all"),
                       downloadButton('download_accuracy', 'Download as CSV')
                   ),
@@ -254,7 +264,7 @@ ui <- dashboardPage(skin='green',
                   # New box
                   box(
                     title= "Filter the data", status = "success", solidHeader= TRUE,
-                    "Something about filtering",
+                    "You can filter the data on one of the columns (i.e Confidence in visual interpretation)",
                     checkboxInput("filter_presence", label="Do you want to filter the data?"),
                     htmlOutput("column_to_filter"),
                     htmlOutput("value_to_filter"),
@@ -285,62 +295,98 @@ server <- function(input, output,session) {
   
   ##################################################################################################################################    
   ############### HARDCODED ROOT FOLDER : everything will be lower
-  volumes <- c('User directory'=Sys.getenv("HOME"))
+  volumes <- c('User directory'=Sys.getenv("HOME"),
+               'C drive' = 'C:/',
+               'Windows drive' = '/media/xubuntu/OSDisk/Users/dannunzio/Documents/')
   
   ##################################################################################################################################    
-  ############### Select output directory
-  shinyDirChoose(input,
-                 'outdir',
+  ############### Select point file
+  shinyFileChoose(input,
+                 'CEfilename',
                  updateFreq = 1000,
                  session=session,
                  roots=volumes,
                  restrictions=system.file(package='base')
   )
   
-  ################################# Output directory path
-  outdir <- reactive({
-    req(input$outdir)
-    dirpath <- parseDirPath(volumes, input$outdir)
-    if(is.null(dirpath)){
-      cat(as.character("No directory selected"))
+  ################################# Display the file path
+  output$pointfilepath = renderPrint({
+    df = parseFilePaths(volumes, input$CEfilename)
+    file_path = as.character(df[,"datapath"])
+    nofile = as.character("No file selected")
+    if(is.null(file_path)){
+      cat(nofile)
     }else{
-        cat(dirpath)}
-    gsub(" ","",dirpath)
-  }) 
-  
-  ################################# Display output directory path
-  output$outdirpath = renderPrint({
-    outdir()
+      cat(file_path)}
   })
   
-  ################################# Select input files (area and point file of validation)
-  output$uice_filename <-renderUI({
-    req(input$outdir)
-    mydir <- outdir()
-    print("nom de nom")
-    print(paste0(outdir(),"/"))
-    selectInput('CEfilename',   
-                label= 'Validation file (.csv)', 
-                list.files(path=paste0(outdir(),"/"),recursive=FALSE,pattern = "\\.csv$"),
-                selected = "collectedData_mockup_results")
-    })
+  ##################################################################################################################################    
+  ############### Select area file
+  shinyFileChoose(input,
+                  'areafilename',
+                  updateFreq = 1000,
+                  session=session,
+                  roots=volumes,
+                  restrictions=system.file(package='base')
+  )
+  
+  ################################# Display the file path
+  output$areafilepath = renderPrint({
+    df = parseFilePaths(volumes, input$areafilename)
+    file_path = as.character(df[,"datapath"])
+    nofile = as.character("No file selected")
+    if(is.null(file_path)){
+      cat(nofile)
+    }else{
+      cat(file_path)}
+  })
+  
+  # ################################# Output directory path
+  # outdir <- reactive({
+  #   req(input$outdir)
+  #   dirpath <- parseDirPath(volumes, input$outdir)
+  #   if(is.null(dirpath)){
+  #     cat(as.character("No directory selected"))
+  #   }else{
+  #       cat(dirpath)}
+  #   gsub(" ","",dirpath)
+  # }) 
+  
+  # ################################# Display output directory path
+  # output$outdirpath = renderPrint({
+  #   outdir()
+  # })
+  
+  # ################################# Select input files (area and point file of validation)
+  # output$uice_filename <-renderUI({
+  #   req(input$outdir)
+  #   mydir <- outdir()
+  #   print("nom de nom")
+  #   print(paste0(outdir(),"/"))
+  #   selectInput('CEfilename',   
+  #               label= 'Validation file (.csv)', 
+  #               list.files(path=paste0(outdir(),"/"),recursive=FALSE,pattern = "\\.csv$"),
+  #               selected = "collectedData_mockup_results")
+  #   })
   
 
-  ################################# Select input files (area and point file of validation)
-  output$uiarea_filename <-renderUI({
-    req(input$outdir)
-    selectInput('areafilename',
-              label= 'Area file (.csv)',
-              list.files(path=paste0(outdir(),"/"),pattern = "\\.csv$"),
-              selected = "area")
-    })
+  # ################################# Select input files (area and point file of validation)
+  # output$uiarea_filename <-renderUI({
+  #   req(input$outdir)
+  #   selectInput('areafilename',
+  #             label= 'Area file (.csv)',
+  #             list.files(path=paste0(outdir(),"/"),pattern = "\\.csv$"),
+  #             selected = "area")
+  #   })
   
   ## Map area CSV
     areas_i   <- reactive({
       req(input$areafilename)
       print("read data of area")
       ############### Read the name chosen from dropdown menu
-      areas_i <- read.csv(paste(outdir(),"/",input$areafilename,sep="")) 
+      df = parseFilePaths(volumes, input$areafilename)
+      file_path = as.character(df[,"datapath"])
+      areas_i <- read.csv(file_path) 
       })
   
     ## Collect earth output file
@@ -348,11 +394,9 @@ server <- function(input, output,session) {
       req(input$CEfilename)
       print("read data of validation")
       ############### Read the name chosen from dropdown menu
-      cefile <-input$CEfilename
-      ############### Load the raster corresponding to the selected name
-      datafolder <- paste0(outdir(),"/",cefile)
-      df_i <- read.csv(gsub(" ","",datafolder))
-      df_i
+      df = parseFilePaths(volumes, input$CEfilename)
+      file_path = as.character(df[,"datapath"])
+      df_i <- read.csv(file_path)
       })
     
     ## select column with reference data
@@ -503,7 +547,7 @@ server <- function(input, output,session) {
     selectInput("check_inline",
                 label = h5(paste("Lines of the pivot table")),
                 choices = categories,
-                selected = input$map_data
+                selected = "operator"
     )
   })
   
@@ -526,9 +570,9 @@ server <- function(input, output,session) {
     lns   <- as.character(input$check_inline)
     clmns <- as.character(input$check_incols)
     df_i_map <- as.data.frame(df_i_map())
-    table(df_i_map[,lns])
-  }
-  ,include.rownames = T,include.colnames = T)
+    as.matrix(table(df_i_map[,lns])) 
+    
+  } ,include.rownames = T,include.colnames = T)
   
   
   ################################################    
@@ -577,10 +621,10 @@ server <- function(input, output,session) {
     
     
     print("test matrix")
-    tmp <- as.matrix(table(df[,map_code,],df[,ref_code]))
+    #tmp <- as.matrix(table(df[,map_code,],df[,ref_code]))
   
-    # tmp <- tapply(df$area,df[,c(map_code,ref_code)],sum)
-    # tmp[is.na(tmp)]<- 0
+    tmp <- tapply(df$area,df[,c(map_code,ref_code)],sum)
+    tmp[is.na(tmp)]<- 0
     
     matrix<-matrix(0,nrow=length(legend),ncol=length(legend))
     
