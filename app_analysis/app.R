@@ -303,7 +303,7 @@ server <- function(input, output,session) {
   ############### Select point file
   shinyFileChoose(input,
                  'CEfilename',
-                 updateFreq = 1000,
+                 filetype=c('csv'),
                  session=session,
                  roots=volumes,
                  restrictions=system.file(package='base')
