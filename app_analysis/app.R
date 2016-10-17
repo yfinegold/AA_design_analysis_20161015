@@ -397,6 +397,12 @@ server <- function(input, output,session) {
       df = parseFilePaths(volumes, input$CEfilename)
       file_path = as.character(df[,"datapath"])
       df_i <- read.csv(file_path)
+      
+      ### If the file doesn't contain an area column, set the area to 1
+      if(!("area" %in% names(df_i))){
+        df_i$area <- 1
+      }
+      df_i
       })
     
     ## select column with reference data
