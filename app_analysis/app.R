@@ -398,11 +398,6 @@ server <- function(input, output,session) {
       file_path = as.character(df[,"datapath"])
       df_i <- read.csv(file_path)
       
-      ### If the file doesn't contain an area column, set the area to 1
-      if(!("area" %in% names(df_i))){
-        df_i$area <- 1
-      }
-      df_i
       })
     
     ## select column with reference data
@@ -411,7 +406,7 @@ server <- function(input, output,session) {
                   'Choose the column with the reference data information', 
                   choices= names(df_i()),
                   multiple = FALSE,
-                  selected = "ref_class")
+                  selected = c("ref_class","ref_code"))
     })
     
     ## select column with map data
@@ -421,7 +416,7 @@ server <- function(input, output,session) {
                     'Choose the column with the map data information', 
                     choices= names(df_i()),
                     multiple = FALSE,
-                    selected = "map_class")
+                    selected = c("map_code","map_class"))
       
     })
     
@@ -464,10 +459,16 @@ server <- function(input, output,session) {
     
    
     
-    ## if a custom map is uploaded to compare with the reference data, create a new map data column 
+    ## Modify the df_i to fit the different formats
     df_i_map <- reactive({
       req(input$CEfilename)
       df_i <- df_i()
+      
+      ### If the file doesn't contain an area column, set the area to 1
+      if(!("area" %in% names(df_i))){
+        df_i$area <- 1
+      }
+     
       df_i_map <- as.data.frame(df_i)
       
     })
@@ -499,7 +500,7 @@ server <- function(input, output,session) {
     
     filterColumnList <- (eval(parse(text = "filterColumnList")))
     
-    df_i <- df_i()
+    df_i <- df_i_map()
     
     selectInput("input_value_to_filter", 
                     sprintf("Values  to filter from column:  %s", as.character(filterColumnList)),
@@ -754,10 +755,14 @@ server <- function(input, output,session) {
     dfa$ci<-as.numeric(dfa$ci)
     dfa$area_adj<-as.numeric(dfa$area_adj)
     
-    avg.plot<-ggplot(data=dfa,
+    avg.plot <- ggplot(data=dfa,
                      aes(x=class,y=area_adj))
-    
-    avg.plot+geom_bar(stat="identity",fill="darkgrey")+geom_errorbar(aes(ymax=area_adj+ci, ymin=area_adj-ci))+theme_bw()
+    ggplot
+    avg.plot+
+      geom_bar(stat="identity",fill="darkgrey")+
+      geom_errorbar(aes(ymax=area_adj+ci, ymin=area_adj-ci))+
+      labs(x = "Map classes", y = "Bias-corrected areas")+
+      theme_bw()
   })
   
   
