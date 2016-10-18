@@ -16,7 +16,7 @@
 ####################################################################################
 
 ####################################################################################
-## Last update: 2016/10/15
+## Last update: 2016/10/18
 ####################################################################################
 
 
@@ -131,6 +131,14 @@ ui <- dashboardPage(skin='green',
                            .nav-tabs-custom .nav-tabs li.active {
                            border-top-color: #00994d;
                            }"),
+                ## CSS format for errors
+                tags$head(
+                          tags$style(HTML("
+                                          .shiny-output-error-validation {
+                                          color: red;
+                                          }
+                          "))
+                ),
                 
                 ####################################################################################
                 # New tabBox
@@ -378,10 +386,13 @@ server <- function(input, output,session) {
   #             list.files(path=paste0(outdir(),"/"),pattern = "\\.csv$"),
   #             selected = "area")
   #   })
-  
+
   ## Map area CSV
     areas_i   <- reactive({
-      req(input$areafilename)
+      validate(
+        need(input$areafilename, "Please select the area file in tab '1:Input'")
+      )
+      # req(input$areafilename)
       print("read data of area")
       ############### Read the name chosen from dropdown menu
       df = parseFilePaths(volumes, input$areafilename)
@@ -391,7 +402,10 @@ server <- function(input, output,session) {
   
     ## Collect earth output file
     df_i  <- reactive({
-      req(input$CEfilename)
+      validate(
+        need(input$CEfilename, "Please select the validation file in tab '1:Input'")
+      )
+      # req(input$CEfilename)
       print("read data of validation")
       ############### Read the name chosen from dropdown menu
       df = parseFilePaths(volumes, input$CEfilename)

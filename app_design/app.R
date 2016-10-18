@@ -16,7 +16,7 @@
 ####################################################################################
 
 ####################################################################################
-## Last update: 2016/10/13
+## Last update: 2016/10/18
 ####################################################################################
 
 ####################################################################################
@@ -50,7 +50,7 @@ packages(RColorBrewer)
 packages(DT)
 packages(rgeos)
 packages(rgdal)
-packages(shinyBS)
+# packages(shinyBS)
 packages(shinyFiles)
 packages(htmltools)
 
@@ -136,6 +136,14 @@ ui <- dashboardPage(
                  .nav-tabs-custom .nav-tabs li.active {
                  border-top-color: #00994d;
                  }"),
+      ## CSS format for errors
+      tags$head(
+        tags$style(HTML("
+                        .shiny-output-error-validation {
+                          color: red;
+                          }
+                       "))
+      ),
 
       ####################################################################################
       # New tabBox
@@ -485,6 +493,9 @@ server <- function(input, output,session) {
     ##################################################################################################################################    
     ############### Find out Map type and store the variable
     mapType <- reactive({
+      # validate(
+      #   need(input$file, "Please select the map file")
+      # )
       req(input$file)
       raster_type <- c('tif')
       vector_type <- c('shp')
@@ -515,7 +526,10 @@ server <- function(input, output,session) {
   
   ################################# Output directory path
   outdir <- reactive({
-    req(input$outdir)
+    validate(
+      need(input$outdir, "Please select the output directory")
+    )
+    # req(input$outdir)
     dirpath <- parseDirPath(volumes, input$outdir)
     dirpath <- gsub(" ","",dirpath)
     if(is.null(dirpath)){
@@ -550,7 +564,9 @@ server <- function(input, output,session) {
   ##################################################################################################################################    
   ############### Read the input raster or vector data under reactive variable 'lcmap'  
   lcmap <- reactive({
-    
+    validate(
+      need(input$file, "Please select the map file")
+    )
     print("read data")
     ############### Read the name chosen from dropdown menu
     ############### Load the raster corresponding to the selected name
@@ -595,7 +611,7 @@ server <- function(input, output,session) {
   ############### Create options if areas are already pre-computed
   # Input manual map area for a raster
   output$selectUI_area_CSV_raster <- renderUI({
-    req(mapType()== "raster_type",input$IsManualAreaRaster,input$outdir)
+    req(mapType()== "raster_type",input$IsManualAreaRaster)
     selectInput('IsManualAreaCSV',
                 label= 'Map area file name. Must be in csv',
                 list.files(path = outdir(),
@@ -676,14 +692,17 @@ server <- function(input, output,session) {
   
   # Display the shapefile data based on the columns selected to display
   output$dataTableUI_vector <- renderDataTable({
-    req(input$file, mapType()== "vector_type", input$show_vars2)
+    validate(
+      need(input$file, "Please select the map file")
+    )
+    req(mapType()== "vector_type", input$show_vars2)
     lcmap <- as.data.frame(lcmap())
     lcmap[, input$show_vars2, drop = FALSE]
   })
   
   # The user can select which column has the class attribute information from the shapefile
   output$selectUI_class_vector <- renderUI({
-    req(input$file, mapType()== "vector_type")
+    req(mapType()== "vector_type")
     shp <- lcmap()
     categories <- names(shp@data)
     selectInput("class_attribute_vector",
@@ -696,7 +715,7 @@ server <- function(input, output,session) {
 
   # The user can select which column has the area information from the shapefile
   output$selectUI_area_vector <- renderUI({
-    req(input$file, mapType()== "vector_type", input$IsManualAreaVector==T)
+    req(mapType()== "vector_type", input$IsManualAreaVector==T)
       shp <- lcmap()
       categories <- names(shp@data)
       selectInput("area_attribute2",
@@ -717,7 +736,10 @@ server <- function(input, output,session) {
   ##################################################################################################################################
   ############### Setup whether Calculation of area in raster mode should be done with R or OFT
   output$MapAreaCalcOption <- renderUI({
-    req(mapType()== "raster_type", input$file, input$IsManualAreaRaster != T)
+    validate(
+      need(input$file, "Please select the map file")
+    )
+    req(mapType()== "raster_type", input$IsManualAreaRaster != T)
     isolate(
       radioButtons("rasterarea",label="What type of area calculation will you use?",
                    choices = list("R" = "r", "OFT" = "oft")
@@ -898,6 +920,9 @@ server <- function(input, output,session) {
   
   ## A user interface for each map_value and text prefilled with  map_class which can be edited
   output$LegendInputs <- renderUI({
+    validate(
+      need(input$areaCalcButton, "Click on Area calculation and legend generation to display and edit the map classes")
+    )
     mapareatable_reactive <- mapareatable_reactive()
       ids <- as.factor(as.matrix(mapareatable_reactive$map_value))
       print(ids)
@@ -938,6 +963,9 @@ server <- function(input, output,session) {
   
   ## Display the table
   output$mapAreaTable <- renderTable({
+    validate(
+      need(input$submitLegend, "Click on submit legend before continuing")
+    )
     maparea_final()
     },
     include.rownames=FALSE
@@ -981,6 +1009,9 @@ server <- function(input, output,session) {
   ############### Display the message regarding expected user's accuracy
   ##################################################################################################################################
   output$the_ex_ua_lo <- reactive({
+    validate(
+      need(input$submitLegend, "Click on submit legend in the previous tab")
+    )
     paste(
       "Rare classes are expected to have the lower user accuracies and should be assigned a low confidence. Here the value chosen is ",
       input$expected_ua_lo,
@@ -997,6 +1028,10 @@ server <- function(input, output,session) {
   ##################################################################################################################################
   ############### Select classes to be included with High expected User's Accuracy 
   output$selectUI_cat_hi <- renderUI({
+    validate(
+      # need(input$file, "Please select the map file"),
+      need(input$submitLegend, "Click on submit legend in the previous tab")
+    )
     req(maparea_final())
     maparea <- maparea_final()
     categories <- as.list(unique(maparea$map_class))
@@ -1029,6 +1064,7 @@ server <- function(input, output,session) {
   ##################################################################################################################################
   ############### Compute sample size as a reactive variable
   strat_sample <- reactive({
+    
     maparea <- as.data.frame(maparea_final())
     print(maparea)
     
@@ -1084,6 +1120,11 @@ server <- function(input, output,session) {
   
   ############### Display the total sample size
   output$overall_sampling_size <- reactive({
+    validate(
+      need(input$file, "Please select the map file"),
+      need(input$submitLegend, "Click on submit legend in tab 2 'Map areas'"),
+      need(input$cat_hi,"Select the classes to include with high and low confidence in the previous tab")
+    )
     df <- strat_sample()
     size <- floor(sum(as.numeric(df[,13])))
     paste("The computed overall size is :  ",size,sep="")
@@ -1104,6 +1145,9 @@ server <- function(input, output,session) {
   output$sampling_table <- renderTable({
     print('this is the table for sampling')
     if(input$IsManualSampling == T){
+      validate(
+        need(input$ManualSamplingFile, "Select a file with the manual sampling points before continuing or unselect 'Do you want to modify the sampling size?'")
+      )
       df<-read.csv(paste(outdir(),"/",input$ManualSamplingFile$name,sep=""),header = T)
       }else{
         df<- strat_sample()
@@ -1139,7 +1183,13 @@ server <- function(input, output,session) {
       print(rp)
       
       if(input$IsManualSampling == T){
+          validate(
+            need(input$ManualSamplingFile, "Select a file with the manual sampling points before continuing or unselect 'Do you want to modify the sampling size?'")
+          )
         rp <- read.csv(paste0(outdir(),"/", input$ManualSamplingFile$name), header = T)
+        validate(
+          need(input$ManualSamplingFile, "Select a file with the manual sampling points before continuing or unselect 'Do you want to modify the sampling size?'")
+        )
         }
       map <- lcmap()
       
@@ -1232,6 +1282,9 @@ server <- function(input, output,session) {
             setProgress(value=.1)
             rp <- strat_sample()
             if(input$IsManualSampling == T){
+                validate(
+                  need(input$ManualSamplingFile, "Select a file with the manual sampling points before continuing or unselect 'Do you want to modify the sampling size?'")
+                )
               rp <- read.csv(paste0(outdir(),"/", input$manualSampling$name), header = T)
               }
             
@@ -1306,7 +1359,11 @@ server <- function(input, output,session) {
   ############### Create vector layer with the points
   spdf <- reactive({
         req(all_features())
-        
+        validate(
+          need(input$file, "Please select the map file"),
+          need(input$submitLegend, "Click on submit legend in tab 2 'Map areas'"),
+          need(input$cat_hi,"Select the classes to include with high and low confidence in tab 3 'Classes to include'")
+        )
         ## If input map is a raster
         if(mapType()== "raster_type"){
           withProgress(
@@ -1346,8 +1403,11 @@ server <- function(input, output,session) {
 
   ## render the map
   output$plotxy  <-  renderLeaflet({
-    
-    
+    validate(
+      need(input$file, "Please select the map file"),
+      need(input$submitLegend, "Click on submit legend in tab 2 'Map areas'"),
+      need(input$cat_hi,"Select the classes to include with high and low confidence in tab 3 'Classes to include'")
+    )
     
     if(mapType()== "raster_type"){
       dfa<-spdf()
