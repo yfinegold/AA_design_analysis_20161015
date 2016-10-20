@@ -52,7 +52,8 @@ packages(DT)
 packages(rgeos)
 packages(rgdal)
 packages(shinyFiles)
-packages(shinyBS)
+# packages(mapview)
+# packages(shinyBS)
 packages(htmltools)
 
 ####################################################################################
@@ -135,7 +136,9 @@ ui <- dashboardPage(skin='green',
                 tags$head(
                           tags$style(HTML("
                                           .shiny-output-error-validation {
-                                          color: red;
+                                          color: #cc00ff;
+                                          font-family:courier;
+                                          font-size: 120%;
                                           }
                           "))
                 ),
@@ -217,10 +220,9 @@ ui <- dashboardPage(skin='green',
                     #uiOutput('uice_filename'),
                     #uiOutput('uiarea_filename'),
                     uiOutput("column_ref"),
-                    uiOutput("column_map")
-                    # 
-                    # uiOutput("Xcrd"),
-                    # uiOutput("Ycrd")
+                    uiOutput("column_map"),
+                    uiOutput("areaCol"),
+                    uiOutput("classCol")
               ),
               # New box
               box(title= "Display data", status = "success", solidHeader= TRUE, width= 8,
@@ -239,13 +241,16 @@ ui <- dashboardPage(skin='green',
                 ####################################################################################
                 # New box
                 box(
-                  title= "Pivot table check", status = "success", solidHeader= TRUE,
+                  title= "View samples", status = "success", solidHeader= TRUE,
                   "Check that columns contain the right information",
-                  htmlOutput("display_check_line"),
-                  htmlOutput("display_check_cols"),
-                  tableOutput("table_check"),
+                  # htmlOutput("display_check_line"),
+                  # htmlOutput("display_check_cols"),
+                  # tableOutput("table_check"),
                   h4("Location of the points collected"),
-                  leafletOutput("map_check")
+                  leafletOutput("map_check"),
+                  uiOutput("Xcrd"),
+                  uiOutput("Ycrd")
+                  
                 )
                 )
       ),
@@ -304,8 +309,9 @@ server <- function(input, output,session) {
   ##################################################################################################################################    
   ############### HARDCODED ROOT FOLDER : everything will be lower
   volumes <- c('User directory'=Sys.getenv("HOME"),
-               'C drive' = 'C:/',
-               'Windows drive' = '/media/xubuntu/OSDisk/Users/dannunzio/Documents/')
+               'C drive' = 'C:/'
+               # 'Windows drive' = '/media/xubuntu/OSDisk/Users/dannunzio/Documents/'
+               )
   
   ##################################################################################################################################    
   ############### Select point file
@@ -389,10 +395,7 @@ server <- function(input, output,session) {
 
   ## Map area CSV
     areas_i   <- reactive({
-      validate(
-        need(input$areafilename, "Please select the area file in tab '1:Input'")
-      )
-      # req(input$areafilename)
+      req(input$areafilename)
       print("read data of area")
       ############### Read the name chosen from dropdown menu
       df = parseFilePaths(volumes, input$areafilename)
@@ -402,10 +405,7 @@ server <- function(input, output,session) {
   
     ## Collect earth output file
     df_i  <- reactive({
-      validate(
-        need(input$CEfilename, "Please select the validation file in tab '1:Input'")
-      )
-      # req(input$CEfilename)
+      req(input$CEfilename)
       print("read data of validation")
       ############### Read the name chosen from dropdown menu
       df = parseFilePaths(volumes, input$CEfilename)
@@ -416,6 +416,9 @@ server <- function(input, output,session) {
     
     ## select column with reference data
     output$column_ref <- renderUI({
+      validate(
+        need(input$CEfilename, "Missing input: Please select the file containing the reference and map data")
+      )
       selectInput('reference_data', 
                   'Choose the column with the reference data information', 
                   choices= names(df_i()),
@@ -425,7 +428,7 @@ server <- function(input, output,session) {
     
     ## select column with map data
     output$column_map <- renderUI({
-      
+        req(input$CEfilename)
         selectInput('map_data', 
                     'Choose the column with the map data information', 
                     choices= names(df_i()),
@@ -434,26 +437,27 @@ server <- function(input, output,session) {
       
     })
     
-    ## select the column with the X coordinates
-    output$Xcrd <- renderUI({
-      
-        selectInput('selectX', 
-                    'Choose the column with the X coordinate', 
-                    choices= names(df_i()),
-                    multiple = FALSE,
-                    selected = "location_x")
-      
+    ## select the column with the area column
+    output$areaCol <- renderUI({
+      validate(
+        need(input$areafilename, "Missing input: Please select the area file")
+      )
+      if(is.element('map_area',names(areas_i()))==FALSE){
+        selectInput('selectAreaCol', 
+                    'Choose the map area column from the area file', 
+                    choices= names(areas_i()),
+                    multiple = FALSE)
+      }
     })
     
-    ## select the column with the Y coordinates
-    output$Ycrd <- renderUI({
-      
-        selectInput('selectY', 
-                    'Choose the column with the Y coordinate', 
-                    choices= names(df_i()),
-                    multiple = FALSE,
-                    selected = "location_y")
-      
+    ## select the column with the classes in the area file
+    output$classCol <- renderUI({
+      if(is.element('map_class',names(areas_i()))==FALSE){
+        selectInput('selectClassCol', 
+                    'Choose the class column from the area file', 
+                    choices= names(areas_i()),
+                    multiple = FALSE)
+      }
     })
 
     ## columns in data table to display
@@ -466,6 +470,9 @@ server <- function(input, output,session) {
     
     ## display the collect earth output file as a Data Table
     output$inputTable <- renderDataTable({
+      validate(
+        need(input$CEfilename, "Missing input: Please select the file containing the reference and map data")
+      )
       req(input$show_vars)
       df_i <- df_i()
       df_i[, input$show_vars, drop = FALSE]
@@ -492,6 +499,9 @@ server <- function(input, output,session) {
 
   # Read the names of df_i() as choices for which column to filter
   output$column_to_filter <- renderUI({
+    validate(
+      need(input$CEfilename, "Missing input: Please select the file containing the reference and map data in tab '1:Input'")
+    )
     req(input$filter_presence)
     if(input$filter_presence==T){
      selectInput('input_column_to_filter', 
@@ -562,53 +572,79 @@ server <- function(input, output,session) {
   
   ##################################################################################################################################
   ############### Interactive selection of attributes for pivot check : lines
-  output$display_check_line <- renderUI({
-    df <- df_i_map()
-    categories <- names(df)
-    selectInput("check_inline",
-                label = h5(paste("Lines of the pivot table")),
-                choices = categories,
-                selected = "operator"
-    )
-  })
-  
+  # output$display_check_line <- renderUI({
+  #   df <- df_i_map()
+  #   categories <- names(df)
+  #   selectInput("check_inline",
+  #               label = h5(paste("Lines of the pivot table")),
+  #               choices = categories,
+  #               selected = "operator"
+  #   )
+  # })
+  # 
   ##################################################################################################################################
   ############### Interactive selection of attributes for pivot check : columns
-  output$display_check_cols <- renderUI({
-    df <- df_i_map()
-    categories <- names(df)
-    selectInput("check_incols",
-                label = h5(paste("Columns of the pivot table")),
-                choices = categories, 
-                selected = input$reference_data
-    )
-  })
-
+  # output$display_check_cols <- renderUI({
+  #   df <- df_i_map()
+  #   categories <- names(df)
+  #   selectInput("check_incols",
+  #               label = h5(paste("Columns of the pivot table")),
+  #               choices = categories, 
+  #               selected = input$reference_data
+  #   )
+  # })
+  # 
   ################################################    
   ################ Create a pivot check table
   ################################################
-  output$table_check <- renderTable({
-    lns   <- as.character(input$check_inline)
-    clmns <- as.character(input$check_incols)
-    df_i_map <- as.data.frame(df_i_map())
-    as.matrix(table(df_i_map[,lns])) 
-    
-  } ,include.rownames = T,include.colnames = T)
-  
+  # output$table_check <- renderTable({
+  #   validate(
+  #     need(input$CEfilename, "Missing input: Please select the file containing the reference and map data in tab '1:Input'")
+  #   )
+  #   lns   <- as.character(input$check_inline)
+  #   clmns <- as.character(input$check_incols)
+  #   df_i_map <- as.data.frame(df_i_map())
+  #   as.matrix(table(df_i_map[,lns])) 
+  #   
+  # } ,include.rownames = T,include.colnames = T)
+  # 
   
   ################################################    
   ################ Display all the points
   ################################################
   
-  output$map_check <-   renderLeaflet({
+  output$Xcrd <- renderUI({
+    #if(req(input$referencedataType==T)){
+    selectInput('selectX', 
+                'Choose the column with the X coordinate', 
+                choices= names(df_i_map()),
+                multiple = FALSE,
+                selected = "location_x")
+    #}
+  })
+
+  output$Ycrd <- renderUI({
+    #if(req(input$referencedataType==T)){
+    selectInput('selectY', 
+                'Choose the column with the Y coordinate', 
+                choices= names(df_i_map()),
+                multiple = FALSE,
+                selected = "location_y")
+    #}
+  })
+  
+  output$map_check <- renderLeaflet({
     df_i_map<- df_i_map()
-    map_code <- input$map_data
+    xcrd <- as.character(input$selectX)
+    ycrd <- as.character(input$selectY)
+    map_code <- as.character(input$map_data)
+    print(map_code)
     dfa <- SpatialPointsDataFrame(
-      coords=data.frame(df_i_map[,c(3,4)]),
-      data=data.frame(df_i_map[,map_code]),
+      coords=df_i_map[,c(xcrd,ycrd)],
+      data=df_i_map,
       proj4string=CRS("+proj=longlat +datum=WGS84"),
       match.ID=F)
-    names(dfa)<-"map_code"
+    # renderMapview(dfa, zcol=map_code)
     factpal <- colorFactor("Spectral", dfa$map_code)
     m <- leaflet() %>%
       addTiles() %>%  # Add default OpenStreetMap map tiles
@@ -698,7 +734,7 @@ server <- function(input, output,session) {
     }
     
     confusion<-data.frame(matrix(nrow=length(legend)+1,ncol=9))
-    names(confusion)<-c("class","code","Pa","PaW","Ua","area","area_adj","se","ci")
+    names(confusion)<-c("class","code","Pa","PaW","Ua","area","bias_corrected_area","se","ci")
     
     ### Integration of all elements into one dataframe
     for(i in 1:length(legend)){
@@ -707,7 +743,7 @@ server <- function(input, output,session) {
       confusion[i,]$Pa<-matrix[i,i]/sum(matrix[,i])
       confusion[i,]$Ua<-matrix[i,i]/sum(matrix[i,])
       confusion[i,]$PaW<-matrix_w[i,i]/sum(matrix_w[,i])
-      confusion[i,]$area_adj<-sum(matrix_w[,i])*sum(areas$map_area)
+      confusion[i,]$bias_corrected_area<-sum(matrix_w[,i])*sum(areas$map_area)
       confusion[i,]$area<-areas[areas$map_class==legend[i],]$map_area
       confusion[i,]$se<-sqrt(sum(matrix_se[,i]))*sum(areas$map_area)
       confusion[i,]$ci<-confusion[i,]$se*1.96
@@ -723,12 +759,16 @@ server <- function(input, output,session) {
   # ################################################
        
   output$accuracy_all <- renderTable({
+    validate(
+      need(input$CEfilename, "Missing input: Please select the file containing the reference and map data in tab '1:Input'"),
+      need(input$areafilename, "Missing input: Please select the area file in tab '1:Input'")
+    )
     item<-data.frame(accuracy_all())
-    item<-item[,c("class","PaW","Ua","area","area_adj","ci")]
+    item<-item[,c("class","PaW","Ua","area","bias_corrected_area","ci")]
     item$PaW<-floor(as.numeric(item$PaW)*100)
     item$Ua<-floor(as.numeric(item$Ua)*100)
     item$area<-floor(as.numeric(item$area))
-    item$area_adj<-floor(as.numeric(item$area_adj))
+    item$bias_corrected_area<-floor(as.numeric(item$bias_corrected_area))
     item$ci<-floor(as.numeric(item$ci))
     names(item) <-c("Class","PA","UA","Map areas","Bias corrected areas","CI")
     item
@@ -739,6 +779,10 @@ server <- function(input, output,session) {
   # #################################################
   
   output$matrix_all <- renderTable({
+    validate(
+      need(input$CEfilename, "Missing input: Please select the file containing the reference and map data in tab '1:Input'"),
+      need(input$areafilename, "Missing input: Please select the area file in tab '1:Input'")
+    )
     if(input$filter_presence==T){    
       df <- df_f()
     }else{df <- df_i_map()}
@@ -761,20 +805,24 @@ server <- function(input, output,session) {
   
   ## could also include user specified axis and title labels
   output$histogram_all <- renderPlot({
+    validate(
+      need(input$CEfilename, "Missing input: Please select the file containing the reference and map data in tab '1:Input'"),
+      need(input$areafilename, "Missing input: Please select the area file in tab '1:Input'")
+    )
     dfa<-as.data.frame(accuracy_all())
     legend <- legend_i()
     
     dfa<-dfa[c(1:length(legend)),]
     dfa[dfa=="NaN"]<-0
     dfa$ci<-as.numeric(dfa$ci)
-    dfa$area_adj<-as.numeric(dfa$area_adj)
+    dfa$bias_corrected_area<-as.numeric(dfa$bias_corrected_area)
     
     avg.plot <- ggplot(data=dfa,
-                     aes(x=class,y=area_adj))
+                     aes(x=class,y=bias_corrected_area))
     ggplot
     avg.plot+
       geom_bar(stat="identity",fill="darkgrey")+
-      geom_errorbar(aes(ymax=area_adj+ci, ymin=area_adj-ci))+
+      geom_errorbar(aes(ymax=bias_corrected_area+ci, ymin=bias_corrected_area-ci))+
       labs(x = "Map classes", y = "Bias-corrected areas")+
       theme_bw()
   })
